@@ -201,27 +201,43 @@ public class BdsPlaywrightCrawler {
      * 브라우저 실행 인수 생성
      */
     private List<String> getBrowserArgs(boolean isDeployment) {
-        List<String> args = new ArrayList<>();
+        List<String> args = new ArrayList<>(List.of(
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-web-security",
+            "--disable-features=VizDisplayCompositor",
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+            "--disable-extensions",
+            "--disable-plugins",
+            "--disable-images",
+            "--disable-java",
+            "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        ));
 
-        // 기본 보안 및 안정성 옵션
-        args.add("--no-sandbox");
-        args.add("--disable-setuid-sandbox");
-        args.add("--disable-dev-shm-usage");
-        args.add("--disable-gpu");
-        args.add("--no-first-run");
-        args.add("--no-default-browser-check");
-        args.add("--disable-default-apps");
-
+        // 배포 환경에서 추가 최적화 옵션
         if (isDeployment) {
-            // 배포 환경 추가 옵션
-            args.add("--disable-background-timer-throttling");
-            args.add("--disable-backgrounding-occluded-windows");
-            args.add("--disable-renderer-backgrounding");
-            args.add("--disable-features=TranslateUI");
-            args.add("--disable-ipc-flooding-protection");
-            args.add("--single-process");
-            args.add("--memory-pressure-off");
-            args.add("--max_old_space_size=4096");
+            args.addAll(List.of(
+                "--single-process",
+                "--no-zygote",
+                "--disable-setuid-sandbox",
+                "--disable-accelerated-2d-canvas",
+                "--no-first-run",
+                "--disable-default-apps",
+                "--disable-sync",
+                "--disable-translate",
+                "--hide-scrollbars",
+                "--metrics-recording-only",
+                "--mute-audio",
+                "--no-default-browser-check",
+                "--no-pings",
+                "--password-store=basic",
+                "--use-mock-keychain",
+                "--memory-pressure-off",
+                "--max_old_space_size=4096"
+            ));
         }
 
         return args;
@@ -231,22 +247,13 @@ public class BdsPlaywrightCrawler {
      * 배포 환경 감지
      */
     private boolean isDeploymentEnvironment() {
-        // Docker 환경 감지
-        if (System.getenv("DOCKER_CONTAINER") != null ||
-                new java.io.File("/.dockerenv").exists()) {
-            return true;
-        }
+        String hostname = System.getenv("HOSTNAME");
+        String cloudtypeApp = System.getenv("CLOUDTYPE_APP_NAME");
+        String pwd = System.getenv("PWD");
 
-        // Spring Profile 확인
-        String profiles = System.getProperty("spring.profiles.active");
-        if (profiles != null && profiles.contains("prod")) {
-            return true;
-        }
-
-        // CI/CD 환경 감지
-        return System.getenv("CI") != null ||
-                System.getenv("GITHUB_ACTIONS") != null ||
-                System.getenv("JENKINS_URL") != null;
+        return (hostname != null && hostname.contains("knock")) ||
+               cloudtypeApp != null ||
+               (pwd != null && pwd.equals("/app"));
     }
 
     /**
@@ -382,7 +389,7 @@ public class BdsPlaywrightCrawler {
             // t_type 확인
             JsonNode tTypeNode = node.get("t_type");
             boolean typeMatches = (targetType == null) ||
-                    (tTypeNode != null && targetType.equals(tTypeNode.asText()));
+                                 (tTypeNode != null && targetType.equals(tTypeNode.asText()));
 
             if (typeMatches) {
                 // 가격 필드 탐색
@@ -493,11 +500,11 @@ public class BdsPlaywrightCrawler {
     private Long extractAnyValidPrice(Page page) {
         try {
             String[] selectors = {
-                    ".price-area .txt",
-                    ".price .txt",
-                    "*:has-text('억')",
-                    "span:has-text('억')",
-                    "div:has-text('억')"
+                ".price-area .txt",
+                ".price .txt",
+                "*:has-text('억')",
+                "span:has-text('억')",
+                "div:has-text('억')"
             };
 
             for (String selector : selectors) {
