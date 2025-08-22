@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  bds-crawler:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      # 로그 볼륨 (선택사항)
+      - ./logs:/app/logs
+    networks:
+      - bds-network
+
+networks:
+  bds-network:
+    driver: bridge
+
+# 개발용 서비스 (선택사항)
+  bds-crawler-dev:
+    build: 
+      context: .
+      target: development
+    ports:
+      - "3002:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev
+    profiles:
+      - dev
