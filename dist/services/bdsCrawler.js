@@ -18,7 +18,7 @@ class BdsPlaywrightCrawler {
             'input[type="text"]',
             '#searchInput',
             '.search-input',
-            '[data-testid="search-input"]'
+            '[data-testid="search-input"]',
         ];
     }
     /**
@@ -34,18 +34,11 @@ class BdsPlaywrightCrawler {
             // 브라우저 시작 (스프링 설정과 동일)
             browser = await playwright_1.chromium.launch({
                 headless: true,
-                args: [
-                    '--no-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-features=VizDisplayCompositor',
-                    '--disable-web-security',
-                    '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                ]
+                args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-features=VizDisplayCompositor', '--disable-web-security', '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'],
             });
             context = await browser.newContext({
                 userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                viewport: { width: 1920, height: 1080 }
+                viewport: { width: 1920, height: 1080 },
             });
             page = await context.newPage();
             page.setDefaultTimeout(8000);
@@ -68,11 +61,11 @@ class BdsPlaywrightCrawler {
             // 1. 사이트 접속
             await page.goto(`${this.baseUrl}/main.ytp`, {
                 waitUntil: 'domcontentloaded',
-                timeout: 8000
+                timeout: 8000,
             });
             await this.safeWait(page, 500);
             // 2. 검색 실행
-            if (!await this.performSearch(page, address)) {
+            if (!(await this.performSearch(page, address))) {
                 return this.createFallbackResponse(address, '검색 실행 실패');
             }
             // 3. URL 분석 및 매매/전월세 URL 생성
@@ -84,14 +77,14 @@ class BdsPlaywrightCrawler {
             }
             // 4. 매매 데이터 추출
             const saleLowest = await this.extractPriceData(page, urlPair.saleUrl, '매매', jsonResponses);
-            // 5. 전월세 데이터 추출  
+            // 5. 전월세 데이터 추출
             const rentLowest = await this.extractPriceData(page, urlPair.rentUrl, '전월세', jsonResponses);
             console.log(`크롤링 완료 - 매매: ${saleLowest}, 전월세: ${rentLowest}`);
             return {
                 주소: address,
                 매매가: saleLowest || 290000000,
                 전세가: rentLowest || 220000000,
-                sourceUrl: urlPair.saleUrl
+                sourceUrl: urlPair.saleUrl,
             };
         }
         catch (error) {
@@ -163,7 +156,7 @@ class BdsPlaywrightCrawler {
             // 해당 탭 URL로 이동
             await page.goto(targetUrl, {
                 waitUntil: 'domcontentloaded',
-                timeout: 8000
+                timeout: 8000,
             });
             await this.safeWait(page, 1000);
             // 1순위: JSON 응답에서 추출
@@ -277,9 +270,9 @@ class BdsPlaywrightCrawler {
     async extractByLowestPriceLabel(page) {
         try {
             const label = page.locator('*:has-text("매물 최저가")').first();
-            if (await label.count() > 0) {
+            if ((await label.count()) > 0) {
                 const priceArea = label.locator('.. .price-info-area .price-area .txt, ../.. .price-info-area .price-area .txt');
-                if (await priceArea.count() > 0) {
+                if ((await priceArea.count()) > 0) {
                     const priceText = await priceArea.first().textContent();
                     if (priceText && priceText.trim() && (priceText.includes('억') || priceText.includes('만'))) {
                         return moneyParser_1.MoneyParser.toWon(priceText.trim());
@@ -319,13 +312,7 @@ class BdsPlaywrightCrawler {
      */
     async extractAnyValidPrice(page) {
         try {
-            const selectors = [
-                '.price-area .txt',
-                '.price .txt',
-                '*:has-text("억")',
-                'span:has-text("억")',
-                'div:has-text("억")'
-            ];
+            const selectors = ['.price-area .txt', '.price .txt', '*:has-text("억")', 'span:has-text("억")', 'div:has-text("억")'];
             for (const selector of selectors) {
                 try {
                     const elements = page.locator(selector);
@@ -393,7 +380,7 @@ class BdsPlaywrightCrawler {
             }
         }
         catch (error) {
-            await new Promise(resolve => setTimeout(resolve, millis));
+            await new Promise((resolve) => setTimeout(resolve, millis));
         }
     }
     createFallbackResponse(address, errorMessage) {
@@ -402,7 +389,7 @@ class BdsPlaywrightCrawler {
             주소: address,
             매매가: 290000000,
             전세가: 220000000,
-            sourceUrl: `크롤링 실패: ${errorMessage}`
+            sourceUrl: `크롤링 실패: ${errorMessage}`,
         };
     }
     async cleanupResources(page, context, browser) {
@@ -430,7 +417,7 @@ class BdsPlaywrightCrawler {
         // 2) placeholder 기반 검색
         try {
             const byPlaceholder = page.getByPlaceholder(/주소|검색|지하철|단지/);
-            if (await byPlaceholder.count() > 0)
+            if ((await byPlaceholder.count()) > 0)
                 return byPlaceholder.first();
         }
         catch (error) { }
@@ -440,7 +427,7 @@ class BdsPlaywrightCrawler {
         for (const sel of this.searchSelectors) {
             try {
                 const loc = page.locator(sel);
-                if (await loc.count() > 0) {
+                if ((await loc.count()) > 0) {
                     const first = loc.first();
                     try {
                         await first.waitFor({ state: 'attached', timeout: 3000 });
