@@ -71,7 +71,7 @@ class BdsPlaywrightCrawler {
             // 3. URL 분석 및 매매/전월세 URL 생성
             const currentUrl = page.url();
             console.log(`검색 완료 URL: ${currentUrl}`);
-            const urlPair = this.generateUrlPair(currentUrl);
+            const urlPair = this.generateUrlPair(currentUrl, address);
             if (!urlPair) {
                 return this.createFallbackResponse(address, 'URL 패턴 분석 실패');
             }
@@ -128,16 +128,28 @@ class BdsPlaywrightCrawler {
     /**
      * URL 패턴 분석 및 매매/전월세 URL 생성 (스프링 코드와 동일)
      */
-    generateUrlPair(currentUrl) {
+    generateUrlPair(currentUrl, address) {
         try {
-            // URL 패턴: /map/realprice_map/{encoded_address}/N/{type}/{tab_number}/{price}.ytp
-            const pattern = /\/map\/realprice_map\/([^/]+)\/N\/([ABC])\/([12])\/([^/]+\.ytp)/;
-            const match = currentUrl.match(pattern);
-            if (match) {
-                const [, encoded, type, currentTab, suffix] = match;
+            // 패턴 1: 기존 패턴 - /map/realprice_map/{encoded_address}/N/{type}/{tab_number}/{price}.ytp
+            const pattern1 = /\/map\/realprice_map\/([^/]+)\/N\/([ABC])\/([12])\/([^/]+\.ytp)/;
+            const match1 = currentUrl.match(pattern1);
+            if (match1) {
+                const [, encoded, type, currentTab, suffix] = match1;
                 const basePattern = `/map/realprice_map/${encoded}/N/${type}/`;
                 const saleUrl = `${this.baseUrl}${basePattern}1/${suffix}`;
                 const rentUrl = `${this.baseUrl}${basePattern}2/${suffix}`;
+                return { saleUrl, rentUrl };
+            }
+            // 패턴 2: 새로운 패턴 - /map/realprice_map.ytp?ubt_mode=tms
+            // 이 경우 검색을 다시 시도하거나 다른 방법으로 처리
+            if (currentUrl.includes('/map/realprice_map.ytp') && currentUrl.includes('ubt_mode=tms')) {
+                console.log('새로운 URL 패턴 감지됨, 대체 방법 사용');
+                // 기본 URL 패턴으로 시도해보기
+                // 주소를 URL 인코딩하여 직접 URL 생성
+                const encodedAddress = encodeURIComponent(address);
+                const basePattern = `/map/realprice_map/${encodedAddress}/N/A/`;
+                const saleUrl = `${this.baseUrl}${basePattern}1/0.ytp`;
+                const rentUrl = `${this.baseUrl}${basePattern}2/0.ytp`;
                 return { saleUrl, rentUrl };
             }
             console.warn(`예상하지 못한 URL 패턴: ${currentUrl}`);
