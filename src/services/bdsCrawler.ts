@@ -55,7 +55,7 @@ export class BdsPlaywrightCrawler {
       })
 
       page = await context.newPage()
-      page.setDefaultTimeout(8000)
+      page.setDefaultTimeout(30000)
 
       // 네트워크 응답 모니터링
       const jsonResponses: string[] = []
@@ -76,7 +76,7 @@ export class BdsPlaywrightCrawler {
       // 1. 사이트 접속
       await page.goto(`${this.baseUrl}/main.ytp`, {
         waitUntil: 'domcontentloaded',
-        timeout: 8000,
+        timeout: 30000,
       })
       await this.safeWait(page, 500)
 
@@ -186,7 +186,7 @@ export class BdsPlaywrightCrawler {
       // 해당 탭 URL로 이동
       await page.goto(targetUrl, {
         waitUntil: 'domcontentloaded',
-        timeout: 8000,
+        timeout: 30000,
       })
       await this.safeWait(page, 1000)
 
