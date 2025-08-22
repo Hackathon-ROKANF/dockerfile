@@ -37,8 +37,15 @@ class BdsPlaywrightCrawler {
                 args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-features=VizDisplayCompositor', '--disable-web-security', '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'],
             });
             context = await browser.newContext({
-                userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 viewport: { width: 1920, height: 1080 },
+                extraHTTPHeaders: {
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'ko-KR,ko;q=0.8,en-US;q=0.5,en;q=0.3',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                },
             });
             page = await context.newPage();
             page.setDefaultTimeout(30000);
@@ -46,11 +53,15 @@ class BdsPlaywrightCrawler {
             const jsonResponses = [];
             page.on('response', async (response) => {
                 const url = response.url();
-                if (url.includes('realprice') || url.includes('api') || url.includes('data')) {
+                if (url.includes('realprice') || url.includes('api') || url.includes('data') || url.includes('ajax')) {
                     try {
-                        const body = await response.text();
-                        if (body && (body.includes('{') || body.includes('['))) {
-                            jsonResponses.push(body);
+                        const contentType = response.headers()['content-type'] || '';
+                        if (contentType.includes('json') || url.includes('json')) {
+                            const body = await response.text();
+                            if (body && (body.includes('{') || body.includes('['))) {
+                                console.log(`JSON 응답 수집: ${url}`);
+                                jsonResponses.push(body);
+                            }
                         }
                     }
                     catch (error) {
@@ -60,10 +71,10 @@ class BdsPlaywrightCrawler {
             });
             // 1. 사이트 접속
             await page.goto(`${this.baseUrl}/main.ytp`, {
-                waitUntil: 'domcontentloaded',
+                waitUntil: 'networkidle',
                 timeout: 30000,
             });
-            await this.safeWait(page, 500);
+            await this.safeWait(page, 2000);
             // 2. 검색 실행
             if (!(await this.performSearch(page, address))) {
                 return this.createFallbackResponse(address, '검색 실행 실패');
@@ -117,7 +128,14 @@ class BdsPlaywrightCrawler {
             await this.safeWait(page, 200);
             await page.keyboard.press('Enter');
             // 페이지 로딩 대기
-            await this.safeWait(page, 1200);
+            await this.safeWait(page, 3000);
+            // 네트워크 요청 완료까지 대기
+            try {
+                await page.waitForLoadState('networkidle', { timeout: 10000 });
+            }
+            catch (error) {
+                console.log('네트워크 아이들 대기 타임아웃, 계속 진행');
+            }
             return true;
         }
         catch (error) {
@@ -130,6 +148,7 @@ class BdsPlaywrightCrawler {
      */
     generateUrlPair(currentUrl, address) {
         try {
+            console.log(`현재 URL 분석: ${currentUrl}`);
             // 패턴 1: 기존 패턴 - /map/realprice_map/{encoded_address}/N/{type}/{tab_number}/{price}.ytp
             const pattern1 = /\/map\/realprice_map\/([^/]+)\/N\/([ABC])\/([12])\/([^/]+\.ytp)/;
             const match1 = currentUrl.match(pattern1);
@@ -138,22 +157,29 @@ class BdsPlaywrightCrawler {
                 const basePattern = `/map/realprice_map/${encoded}/N/${type}/`;
                 const saleUrl = `${this.baseUrl}${basePattern}1/${suffix}`;
                 const rentUrl = `${this.baseUrl}${basePattern}2/${suffix}`;
+                console.log(`패턴 1 매치 - 매매: ${saleUrl}, 전세: ${rentUrl}`);
                 return { saleUrl, rentUrl };
             }
             // 패턴 2: 새로운 패턴 - /map/realprice_map.ytp?ubt_mode=tms
-            // 이 경우 검색을 다시 시도하거나 다른 방법으로 처리
             if (currentUrl.includes('/map/realprice_map.ytp') && currentUrl.includes('ubt_mode=tms')) {
-                console.log('새로운 URL 패턴 감지됨, 대체 방법 사용');
-                // 기본 URL 패턴으로 시도해보기
-                // 주소를 URL 인코딩하여 직접 URL 생성
-                const encodedAddress = encodeURIComponent(address);
-                const basePattern = `/map/realprice_map/${encodedAddress}/N/A/`;
-                const saleUrl = `${this.baseUrl}${basePattern}1/0.ytp`;
-                const rentUrl = `${this.baseUrl}${basePattern}2/0.ytp`;
+                console.log('새로운 URL 패턴 감지됨, 현재 페이지에서 직접 처리');
+                // 현재 페이지에서 탭 전환으로 처리
+                const saleUrl = currentUrl;
+                const rentUrl = currentUrl;
+                console.log(`패턴 2 매치 - 기본 URL: ${saleUrl}`);
                 return { saleUrl, rentUrl };
             }
-            console.warn(`예상하지 못한 URL 패턴: ${currentUrl}`);
-            return null;
+            // 패턴 3: 다른 형태의 URL인 경우 기본 URL 생성 시도
+            const urlObj = new URL(currentUrl);
+            const searchParams = new URLSearchParams(urlObj.search);
+            // URL에서 주소 관련 정보 추출 시도
+            let encodedAddress = encodeURIComponent(address);
+            // 기본 URL 패턴으로 시도해보기
+            const basePattern = `/map/realprice_map/${encodedAddress}/N/A/`;
+            const saleUrl = `${this.baseUrl}${basePattern}1/0.ytp`;
+            const rentUrl = `${this.baseUrl}${basePattern}2/0.ytp`;
+            console.log(`패턴 3 매치 - 매매: ${saleUrl}, 전세: ${rentUrl}`);
+            return { saleUrl, rentUrl };
         }
         catch (error) {
             console.error(`URL 생성 오류: ${error.message}`);
@@ -165,12 +191,17 @@ class BdsPlaywrightCrawler {
      */
     async extractPriceData(page, targetUrl, tabType, jsonResponses) {
         try {
-            // 해당 탭 URL로 이동
+            console.log(`${tabType} 데이터 추출 시작 - URL: ${targetUrl}`);
+            // 새로운 URL 패턴인 경우 탭 전환으로 처리
+            if (targetUrl.includes('ubt_mode=tms')) {
+                return await this.extractPriceWithTabSwitch(page, tabType, jsonResponses);
+            }
+            // 기존 방식: 해당 탭 URL로 이동
             await page.goto(targetUrl, {
                 waitUntil: 'domcontentloaded',
                 timeout: 30000,
             });
-            await this.safeWait(page, 1000);
+            await this.safeWait(page, 2000);
             // 1순위: JSON 응답에서 추출
             const priceFromJson = this.extractPriceFromJson(jsonResponses, tabType);
             if (priceFromJson && priceFromJson > 0) {
@@ -188,6 +219,61 @@ class BdsPlaywrightCrawler {
         }
         catch (error) {
             console.error(`${tabType} 데이터 추출 오류: ${error.message}`);
+            return null;
+        }
+    }
+    /**
+     * 새로운 패턴에서 탭 전환으로 가격 추출
+     */
+    async extractPriceWithTabSwitch(page, tabType, jsonResponses) {
+        try {
+            console.log(`탭 전환 방식으로 ${tabType} 데이터 추출`);
+            // 탭 선택자들 시도
+            const tabSelectors = [
+                `li[data-tab="${tabType === '매매' ? '1' : '2'}"]`,
+                `a[href*="tab=${tabType === '매매' ? '1' : '2'}"]`,
+                `button[data-type="${tabType === '매매' ? 'sale' : 'rent'}"]`,
+                `.tab-${tabType === '매매' ? 'sale' : 'rent'}`,
+                `*:has-text("${tabType}")`,
+            ];
+            // 탭 클릭 시도
+            let tabClicked = false;
+            for (const selector of tabSelectors) {
+                try {
+                    const tab = page.locator(selector).first();
+                    if (await tab.count() > 0 && await tab.isVisible()) {
+                        console.log(`탭 클릭 시도: ${selector}`);
+                        await tab.click();
+                        await this.safeWait(page, 2000);
+                        tabClicked = true;
+                        break;
+                    }
+                }
+                catch (error) {
+                    // 다음 셀렉터 시도
+                }
+            }
+            if (!tabClicked) {
+                console.warn(`${tabType} 탭을 찾지 못했습니다`);
+            }
+            // 데이터 로딩 대기
+            await this.safeWait(page, 3000);
+            // 1순위: JSON 응답에서 추출
+            const priceFromJson = this.extractPriceFromJson(jsonResponses, tabType);
+            if (priceFromJson && priceFromJson > 0) {
+                console.log(`${tabType} 가격 추출 성공 (JSON): ${priceFromJson}`);
+                return priceFromJson;
+            }
+            // 2순위: DOM에서 추출
+            const priceFromDom = await this.extractPriceFromDOM(page, tabType);
+            if (priceFromDom && priceFromDom > 0) {
+                console.log(`${tabType} 가격 추출 성공 (DOM): ${priceFromDom}`);
+                return priceFromDom;
+            }
+            return null;
+        }
+        catch (error) {
+            console.error(`탭 전환 방식 가격 추출 오류: ${error.message}`);
             return null;
         }
     }
@@ -253,28 +339,85 @@ class BdsPlaywrightCrawler {
      */
     async extractPriceFromDOM(page, tabType) {
         try {
-            await this.safeWait(page, 500);
+            console.log(`DOM에서 ${tabType} 가격 추출 시도`);
+            await this.safeWait(page, 1000);
             // 방법 1: "매물 최저가" 라벨 기준으로 추출
             let price = await this.extractByLowestPriceLabel(page);
             if (price && price > 0) {
+                console.log(`방법 1 성공: ${price}`);
                 return price;
             }
             // 방법 2: price-info-area에서 추출
             price = await this.extractFromPriceInfoArea(page);
             if (price && price > 0) {
+                console.log(`방법 2 성공: ${price}`);
                 return price;
             }
             // 방법 3: 화면의 모든 가격 중 유효한 첫 번째 선택
             price = await this.extractAnyValidPrice(page);
             if (price && price > 0) {
+                console.log(`방법 3 성공: ${price}`);
                 return price;
             }
+            // 방법 4: 더 넓은 범위의 가격 셀렉터
+            price = await this.extractPriceWithBroadSelectors(page);
+            if (price && price > 0) {
+                console.log(`방법 4 성공: ${price}`);
+                return price;
+            }
+            console.log(`모든 DOM 추출 방법 실패`);
             return null;
         }
         catch (error) {
             console.error(`DOM 가격 추출 오류: ${error.message}`);
             return null;
         }
+    }
+    /**
+     * 더 넓은 범위의 셀렉터로 가격 추출
+     */
+    async extractPriceWithBroadSelectors(page) {
+        const broadSelectors = [
+            // 클래스 기반
+            '.price',
+            '.amount',
+            '.cost',
+            '.money',
+            '.value',
+            // 텍스트 포함 검색
+            '*:has-text("억원")',
+            '*:has-text("만원")',
+            '*:has-text("억 ")',
+            '*:has-text("만 ")',
+            // 속성 기반
+            '[data-price]',
+            '[data-amount]',
+            '[data-value]',
+            // 일반적인 패턴
+            'span:contains("억")',
+            'div:contains("억")',
+            'p:contains("억")',
+        ];
+        for (const selector of broadSelectors) {
+            try {
+                const elements = page.locator(selector);
+                const count = Math.min(await elements.count(), 10);
+                for (let i = 0; i < count; i++) {
+                    const text = await elements.nth(i).textContent();
+                    if (text && (text.includes('억') || text.includes('만')) && !text.includes('조')) {
+                        console.log(`셀렉터 ${selector}에서 발견된 텍스트: ${text}`);
+                        const price = moneyParser_1.MoneyParser.toWon(text.trim());
+                        if (price && price > 0 && price < 100000000000) { // 1000억 이하만
+                            return price;
+                        }
+                    }
+                }
+            }
+            catch (error) {
+                // 다음 셀렉터 시도
+            }
+        }
+        return null;
     }
     /**
      * "매물 최저가" 라벨 기준 추출 (스프링 코드와 동일)
